@@ -1,4 +1,4 @@
-pragma solidity ^0.8.0;
+pragma solidity >=0.6.0 <0.7.0;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
@@ -22,6 +22,11 @@ modifier onlyOwner{
     require(msg.sender ==owner);
     _;
 }
+modifier stopInEmergency {
+	require(!stopped);
+	_;
+}
+
 modifier onlyInEmergency {
 	require(stopped);
 	_;
@@ -37,12 +42,46 @@ function emergency() public onlyOwner {
 }
 //계약소유자의 주
 //초기설정
-constructor()public ERC721("Proof-of-Snake High Scorer", "POSHS"){
-owner = msg.sender;
-currentLeader = msg.sender;
-potBalance[owner] = 0;
-highScore = 2;
+constructor() public ERC721("Proof-of-Snake High Scorer", "POSHS") { 
+	owner = msg.sender;
+	currentLeader = msg.sender;
+	potBalance[owner] = 0;
+	highScore = 2;
 }
-
+function playGame() public payable stopInEmergency {
+	//@notice Ensures minimum value to play the game is met.
+	require(msg.value >= gameFee, "Minimum game fee is not met.");
+	potBalance[msg.sender] = 0;
     
+	//@dev Safety feature: use SafeMath's function to add half the fee to currentLeader's potBalance mapping
+	//@dev Safety feature: use SafeMath's functions to add remaining fee to owner's potBalance mapping
+	potBalance[owner] = potBalance[owner].add(msg.value.div(2));
+	potBalance[currentLeader] = potBalance[currentLeader].add(
+	msg.value.sub(msg.value.div(2))
+    );
+}
+function newLeader(uint256 _score) public stopInEmergency {
+	//@notice Requires that msg.sender has at least paid to play the game once
+	require(potBalance[msg.sender] >= 0, "Player has not played before.");
+	//@notice Updates the current leader to msg.sender
+	currentLeader = msg.sender;
+	//@notice Updates the current high score
+	highScore = _score;
+    
+	//Mint a POSHS token
+	uint256 _tokenId = totalSupply().add(1);
+	_mint(msg.sender, _tokenId);
+}
+	function withdrawEarnings() public stopInEmergency {
+	//@notice Ensures that withdrawer's high score has been beatan before being able to withdraw. This maintains the intended economics.
+	require(
+		msg.sender != currentLeader && potBalance[msg.sender] > 0,
+		"Leader's high score has not been beaten or no earnings collected yet."
+	);
+
+	potBalance[msg.sender] = 0;
+
+	//@notice Empty out balance of msg.sender and transfer to msg.sender.
+	msg.sender.transfer(potBalance[msg.sender]);
+}	
 }
